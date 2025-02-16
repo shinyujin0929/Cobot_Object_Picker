@@ -18,8 +18,8 @@ The robotic arm analyzes objects via a camera, determines the correct grip angle
 2. YOLO determines the object's rotation angle.
 3. MyCobot moves to the object, adjusts the grip angle, and picks it up.
 4. The object is placed at a predefined location based on its color.
-   ![Image](https://github.com/user-attachments/assets/c5d1c07b-12bc-4a48-ac68-47879e7fb2f4)
-
+   
+![Image](https://github.com/user-attachments/assets/c5d1c07b-12bc-4a48-ac68-47879e7fb2f4)
 ![Image](https://github.com/user-attachments/assets/a7bde7c6-7237-42ff-9fbb-de91b99f5149)
 
 ## 💻 Installation
