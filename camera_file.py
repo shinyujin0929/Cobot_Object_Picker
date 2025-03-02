@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import time
-from pymycobot.mycobot import MyCobot
 import cobot_module
 
 
@@ -13,7 +12,7 @@ def update_detected_angle(angle):
 
     
 # 이전 각도를 전역 변수로 설정
-previous_angle = 0.0
+previous_angle = None
 # 카메라 위치로 이동
 def find_contour(roi, frame, angle_file, x1, y1, x2, y2):
     global previous_angle  # 전역 변수를 사용하여 이전 각도 저장
@@ -60,7 +59,7 @@ def find_contour(roi, frame, angle_file, x1, y1, x2, y2):
             print(f"Detected angle: {angle}")  # 감지된 각도 디버깅
 
             # 각도 변화 감지
-            if abs(angle - previous_angle) >= 20:
+            if previous_angle is None or abs(angle - previous_angle) >= 20:
                 changed_angle = angle  # 새로 감지된 각도를 저장
                 previous_angle = angle  # 마지막 각도를 업데이트
                 
@@ -92,13 +91,13 @@ def capture_and_display_with_angle(frame, angle):
     cv2.destroyWindow("Captured Frame with Angle")
 
 def yolo_run():
-    
-    global previous_angle
-    previous_angle = 0.0  # 각도 초기화
+    previous_position = None
+    previous_time = None
+    stationary_threshold = 2.0
+    detected_angle = None
     model = YOLO(r'C:/mypro/kairos_project/runs/detect/train2/weights/best.pt')
     cap = cv2.VideoCapture(1)
-    angle_file = 'changed_angles.txt'
-    last_angle = None
+    angle_file = "changed_angles.txt"
     detected_color = None  # 감지된 색상 저장
 
     while True:
@@ -109,38 +108,40 @@ def yolo_run():
 
         results = model(frame)
         height, width, _ = frame.shape
+        detected_objects = []
         for box in results[0].boxes:
             x1, y1, x2, y2 = box.xyxy[0].numpy()
             if 0 < x1 < 1 and 0 < y1 < 1 and 0 < x2 < 1 and 0 < y2 < 1:
                 x1, y1, x2, y2 = x1 * width, y1 * height, x2 * width, y2 * height
             x1, y1, x2, y2 = map(int, (x1, y1, x2, y2))
-            conf = box.conf[0].item()
-            cls = int(box.cls[0].item())
-            label = f"{model.names[cls]}: {conf:.2f}"
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
-            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-            # 감지된 물체의 색상 정보 저장
-            detected_color = model.names[cls]
-            print(f"Detected color: {detected_color}")  # 감지된 색상 디버깅
-
+ 
             # ROI 영역 설정 후 윤곽선 검출
             roi = frame[y1:y2, x1:x2]
             angle, changed_angle = find_contour(roi, frame, angle_file, x1, y1, x2, y2)
             if angle is not None:
-                last_angle = changed_angle  # 새로 감지된 각도를 저장
+                detected_angle = changed_angle  # 새로 감지된 각도를 저장
+            
+            center_x = (x1 + x2) // 2
+            center_y = (y1 + y2) // 2
+            detected_objects.append((center_x, center_y))
+
+        if detected_objects:
+            current_position = detected_objects[0]
+            if previous_position:
+                movement = np.linalg.norm(np.array(current_position) - np.array(previous_position))
+                if movement < 10:  # 10픽셀 이하 움직이면 정지한 것으로 판단
+                    if previous_time is None:
+                        previous_time = time.time()
+                    elif time.time() - previous_time >= stationary_threshold:
+                        print("객체 정지 감지 | 캡처 및 동작 수행")
+                        capture_and_display_with_angle(frame, detected_angle)
+                        break  
+                else:
+                    previous_time = None  
+            previous_position = current_position  
 
         cv2.imshow('Webcam', frame)
 
-        # 'q' 키를 눌렀을 때 물체 회전 각도를 이용하여 로봇팔 이동
-        if cv2.waitKey(1) == ord('q'):
-            if last_angle is not None:
-                capture_and_display_with_angle(frame, last_angle)
-                cobot_module.current_angle = last_angle  # cobot_module에 감지된 각도 전달
-                print(f"Updated current angle to: {cobot_module.current_angle}")  # 디버깅 메시지
-                #last_angle = 0
-
-            break
 
     cap.release()
     cv2.destroyAllWindows()
